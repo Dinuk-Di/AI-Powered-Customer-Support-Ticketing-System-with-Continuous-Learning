@@ -1,0 +1,6 @@
+@PrioritizationService_HostAddress = http://localhost:5283
+
+GET {{PrioritizationService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,6 @@
+@AICategorizationService_HostAddress = http://localhost:5027
+
+GET {{AICategorizationService_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

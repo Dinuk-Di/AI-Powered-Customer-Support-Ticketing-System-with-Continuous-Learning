@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "E1gLC53ARCU=",
+  "success": true,
+  "projectFilePath": "E:\\Dinuk\\AI\\AI-Powered Customer Support Ticketing System with Continuous Learning\\CustomerSupportTicketingSystem\\src\\NotificationService\\NotificationService.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\LOQ\\.nuget\\packages\\microsoft.aspnetcore.openapi\\9.0.8\\microsoft.aspnetcore.openapi.9.0.8.nupkg.sha512",
+    "C:\\Users\\LOQ\\.nuget\\packages\\microsoft.openapi\\1.6.17\\microsoft.openapi.1.6.17.nupkg.sha512"
+  ],
+  "logs": []
+}
