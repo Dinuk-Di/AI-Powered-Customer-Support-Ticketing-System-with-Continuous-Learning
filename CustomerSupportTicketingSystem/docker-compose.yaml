@@ -1,0 +1,305 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: customer-support-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: CustomerSupportTickets
+      MYSQL_USER: tickets_user
+      MYSQL_PASSWORD: tickets_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # Ticket Management Service
+  ticket-management-service:
+    build:
+      context: ./src/TicketManagementService
+      dockerfile: Dockerfile
+    container_name: ticket-management-service
+    ports:
+      - "5001:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=mysql;Database=CustomerSupportTickets;User=root;Password=password;Port=3306;
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # AI Categorization Service
+  ai-categorization-service:
+    build:
+      context: ./src/AICategorizationService
+      dockerfile: Dockerfile
+    container_name: ai-categorization-service
+    ports:
+      - "5002:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    volumes:
+      - ./src/AICategorizationService/Models:/app/Models
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prioritization Service
+  prioritization-service:
+    build:
+      context: ./src/PrioritizationService
+      dockerfile: Dockerfile
+    container_name: prioritization-service
+    ports:
+      - "5003:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # User Management Service
+  user-management-service:
+    build:
+      context: ./src/UserManagementService
+      dockerfile: Dockerfile
+    container_name: user-management-service
+    ports:
+      - "5004:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Server=mysql;Database=CustomerSupportTickets;User=root;Password=password;Port=3306;
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Notification Service
+  notification-service:
+    build:
+      context: ./src/NotificationService
+      dockerfile: Dockerfile
+    container_name: notification-service
+    ports:
+      - "5005:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - SENDGRID_API_KEY=your_sendgrid_api_key
+      - TWILIO_ACCOUNT_SID=your_twilio_account_sid
+      - TWILIO_AUTH_TOKEN=your_twilio_auth_token
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # API Gateway (Ocelot)
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "5000:80"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    depends_on:
+      - ticket-management-service
+      - ai-categorization-service
+      - prioritization-service
+      - user-management-service
+      - notification-service
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis Cache (for session management and caching)
+  redis:
+    image: redis:7-alpine
+    container_name: customer-support-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # RabbitMQ (for message queuing between services)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: customer-support-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=admin123
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ML Model Training Pipeline
+  ml-training-pipeline:
+    build:
+      context: ./MLModelTrainingPipeline
+      dockerfile: Dockerfile
+    container_name: ml-training-pipeline
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - MODEL_OUTPUT_PATH=/app/Models
+    volumes:
+      - ./MLModelTrainingPipeline/Models:/app/Models
+      - ./MLModelTrainingPipeline/TrainingData:/app/TrainingData
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    profiles:
+      - training
+
+  # Monitoring and Logging
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: customer-support-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: customer-support-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Elasticsearch for centralized logging
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: customer-support-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: customer-support-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - customer-support-network
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  rabbitmq_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+
+networks:
+  customer-support-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
